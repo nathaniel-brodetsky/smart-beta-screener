@@ -82,3 +82,78 @@ class UniverseLoader:
                 pd.Series(tickers).to_csv(self.cache, header=False, index=False)
             except OSError as exc:
                 logger.warning(f"Failed to write cache to {self.cache}: {exc}")
+
+
+
+_BATCH_SIZE = 10
+_RETRY_ATTEMPTS = 3
+_RETRY_BACKOFF = 2.0
+
+class MarketDataFetcher:
+    def __init__(
+            self,
+            period: str = "2y",
+            batch_size: int = _BATCH_SIZE,
+            retry_attempts: int = _RETRY_ATTEMPTS,
+            retry_backoff: float = _RETRY_BACKOFF,
+    ) -> None:
+        self._period = period
+        self._batch_size = batch_size
+        self._retry_attempts = retry_attempts
+        self._retry_backoff = retry_backoff
+
+    def fetch(self, tickers: List[str])->Tuple[pd.DataFrame, Dict[str, Dict[str, float]]]:
+        all_prices: List[pd.DataFrame] = []
+        fundamentals: Dict[str, Dict[str, float]] = {}
+
+        batches = [tickers[i: i + self._batch_size] for i in range(0, len(tickers), self._batch_size)]
+        for batch in batches:
+            price_chunk = self._download_prices_with_retry(batch)
+            if price_chunk is not None and not price_chunk.empty:
+                all_prices.extend(price_chunk)
+
+            for ticker in batch:
+                fundamentals[ticker] = self._fetch_fundamentals(ticker)
+
+        if not all_prices:
+            return pd.DataFrame(), {}
+
+        prices = pd.concat(all_prices, axis=1).ffill().dropna(axis=1,how="all")
+        valid_tickers = [t for t in prices.columns if t in fundamentals]
+        prices = prices[valid_tickers]
+
+        return prices, fundamentals
+
+    def _download_prices_with_retry(self, tickers: List[str]) -> Optional[pd.DataFrame]:
+        delay = self._retry_backoff
+        for attempt in range(1, self._retry_attempts + 1):
+            try:
+                raw = yf.download(tickers, period=self._period, auto_adjust=True, progress=False, threads=True)
+                if raw.empty:
+                    raise ValueError("Empty DataFrame")
+
+                if isinstance(raw.columns, pd.MultiIndex):
+                    return raw["Close"].copy()
+                else:
+                    prices = raw[["Close"]].copy()
+                    prices.columns = pd.Index(tickers)
+                    return prices
+            except Exception as exc:
+                if attempt < self._retry_attempts:
+                    time.sleep(delay)
+                    delay *= 2
+        return None
+
+    def _fetch_fundamentals(self, ticker: str) -> Dict[str, float]:
+        nan = float("nan")
+        result: Dict[str, float] = {"pe_ratio": nan, "roe": nan}
+        try:
+            info = yf.Ticker(ticker).info
+            raw_pe = info.get("trailingPE") or info.get("forwardPE")
+            raw_roe = info.get("returnOnEquity")
+
+            result["pe_ratio"] = float(raw_pe) if raw_pe is not None else nan
+            result["roe"] = float(raw_roe) if raw_roe is not None else nan
+        except Exception:
+            pass
+        return result
