@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 import pandas as pd
-from scripy import stats
+from scipy import stats
 
 logger = logging.getLogger(__name__)
 
