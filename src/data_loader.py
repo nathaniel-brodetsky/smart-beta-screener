@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-_WIKI_URL = "https://en.wikipedia.org/wiki/"
+_WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_100_companies"
 
 _SP100_FALLBACK: List[str] = [
     "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "META", "BRK-B", "LLY", "AVGO",
@@ -27,8 +27,8 @@ _SP100_FALLBACK: List[str] = [
 
 class UniverseLoader:
     def __init__(self, cache_dir: Optional[Path] = None)->None:
-        self.cache_dir = cache_dir
-        self.cache: Optional[Path] = (
+        self._cache_dir = cache_dir
+        self._cache_file: Optional[Path] = (
             cache_dir / "sp100_tickers.csv" if cache_dir else None
         )
 
@@ -38,18 +38,18 @@ class UniverseLoader:
             if tickers:
                 logger.info(f"Loaded {len(tickers)} tickers from cache")
                 return tickers
-            tickers = self._scrape_wikipedia()
-            if not tickers:
-                logger.warning("Wikipedia has no tickers")
-                tickers = SP100_FALLBACK.copy()
+        tickers = self._scrape_wikipedia()
+        if not tickers:
+            logger.warning("Wikipedia has no tickers")
+            tickers = _SP100_FALLBACK.copy()
 
-            tickers = sorted(set(tickers))
-            self._write_cache(tickers)
-            return tickers
+        tickers = sorted(set(tickers))
+        self._write_cache(tickers)
+        return tickers
 
     def _scrape_wikipedia(self) -> List[str]:
         try:
-            response = requests.get(_WIKI_URL, timeout=10)
+            response = requests.get(_WIKI_URL, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "lxml")
             table = soup.find("table", {"id": "constituents"})
@@ -62,26 +62,26 @@ class UniverseLoader:
                 if cells:
                     raw = cells[0].get_text(strip=True).replace(".","-")
                     tickers.append(raw.upper())
-                return tickers
+            return tickers
         except Exception as exc:
             logger.error("Wikipedia scrape error %s", exc)
             return []
 
-        def _read_cache() -> List[str]:
-            try:
-                df = pd.read_csv(self.cache, header=None)
-                return df.iloc[:,0].astype(str).tolist()
-            except Exception:
-                return []
+    def _read_cache(self) -> List[str]:
+        try:
+            df = pd.read_csv(self._cache_file, header=None)
+            return df.iloc[:,0].astype(str).tolist()
+        except Exception:
+            return []
 
-        def _write_cache(self, tickers: List[str]) -> None:
-            if self.cache_file is None:
-                return
-            try:
-                self._cache_file.parent.mkdir(parents=True, exist_ok=True)
-                pd.Series(tickers).to_csv(self.cache, header=False, index=False)
-            except OSError as exc:
-                logger.warning(f"Failed to write cache to {self.cache}: {exc}")
+    def _write_cache(self, tickers: List[str]) -> None:
+        if self._cache_file is None:
+            return
+        try:
+            self._cache_file.parent.mkdir(parents=True, exist_ok=True)
+            pd.Series(tickers).to_csv(self._cache_file, header=False, index=False)
+        except OSError as exc:
+            logger.warning(f"Failed to write cache to {self._cache_file}: {exc}")
 
 
 
@@ -110,7 +110,7 @@ class MarketDataFetcher:
         for batch in batches:
             price_chunk = self._download_prices_with_retry(batch)
             if price_chunk is not None and not price_chunk.empty:
-                all_prices.extend(price_chunk)
+                all_prices.append(price_chunk)
 
             for ticker in batch:
                 fundamentals[ticker] = self._fetch_fundamentals(ticker)

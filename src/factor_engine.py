@@ -17,7 +17,7 @@ class FactorEngine:
         if prices.empty:
             raise ValueError("No prices")
         if len(prices) < 22:
-            raise ValueError("Price must contain at least 22 raws; got {len(prices)}")
+            raise ValueError(f"Price must contain at least 22 raws; got {len(prices)}")
         self._prices = prices.copy()
         self._fundamentals = fundamentals
         self._log_returns: Optional[pd.DataFrame] = None
@@ -47,7 +47,7 @@ class FactorEngine:
         return factor_df
 
     def compute_momentum(self) -> pd.Series:
-        prices = self._prices()
+        prices = self._prices
         try:
             ret_12m = (prices.iloc[-1] / prices.iloc[-min(252, len(prices))]) - 1
             ret_1m = (prices.iloc[-1] / prices.iloc[-min(21, len(prices))]) - 1
@@ -61,7 +61,7 @@ class FactorEngine:
         return momentum
 
     def compute_volatility(self) -> pd.Series:
-        log.returns=self.get_log_returns()
+        log_returns=self.get_log_returns()
         try:
             raw_vol:pd.Series=log_returns.std() * np.sqrt(_TRADING_DAYS_PER_YEAR)
             volatility: pd.Series= -raw_vol
@@ -74,14 +74,14 @@ class FactorEngine:
 
     def compute_value(self) -> pd.Series:
         tickers = self._prices.columns.tolist()
-        pd_series = pd.Series(
+        pe_series = pd.Series(
             {t: self._fundamentals.get(t, {}).get("pe_ratio", float("nan")) for t in tickers},
             dtype=float,
         )
 
         pe_series = pe_series.where(pe_series > 0)
 
-        value: pd.Series = -pe_series()
+        value: pd.Series = -pe_series
         value.name="value"
         return value
 
@@ -96,7 +96,7 @@ class FactorEngine:
 
     def get_log_returns(self) -> pd.DataFrame:
         if self._log_returns is None:
-            self._log_returns = np.Log(
+            self._log_returns = np.log(
                 self._prices / self._prices.shift(1)
             ).dropna(how="all")
         return self._log_returns

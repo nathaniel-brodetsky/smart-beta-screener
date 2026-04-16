@@ -47,7 +47,7 @@ class PortfolioRanker:
         if missing_cols:
             raise ValueError(f"missing columns: {missing_cols}")
 
-        self._factor_df = factor_df[self._ExPECTED_FACTORS].copy()
+        self._factor_df = factor_df[self._EXPECTED_FACTORS].copy()
         self.weights = weights
         self._min_valid_factors = min_valid_factors
 
@@ -61,7 +61,7 @@ class PortfolioRanker:
 
         result = z_scores.loc[composite.index].copy()
         result.columns = pd.Index([f"z_{c}" for c in result.columns])
-        result["composite"] = composite
+        result["composite_score"] = composite
         result.sort_values("composite_score", ascending=False, inplace=True)
         result["rank"] = range(1, len(result)+1)
 
@@ -72,7 +72,7 @@ class PortfolioRanker:
         return self._compute_z_scores()
 
     def _compute_z_scores(self) -> pd.DataFrame:
-        z_df - self._factor_df.copy()
+        z_df = self._factor_df.copy()
 
         for col in self._EXPECTED_FACTORS:
             series = z_df[col].dropna()
@@ -90,7 +90,7 @@ class PortfolioRanker:
         return z_df
 
     def _apply_weights(self, z_df: pd.DataFrame) -> pd.DataFrame:
-        norm_weights = self._weights.normalized()
+        norm_weights = self.weights.normalized()
         weighted = z_df.copy()
         for col in self._EXPECTED_FACTORS:
             weighted[col] = z_df[col] * norm_weights[col]
